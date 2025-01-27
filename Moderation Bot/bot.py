@@ -28,7 +28,7 @@ GROUP_ID = -1002270622838  # Replace with your actual group ID
 ADMIN_IDS = {5685799208, 136817688, 1087968824}
 SETTINGS_FILE = "group_settings.json"
 WARN_FILE = "warnings.json"
-DEFAULT_MUTE_DURATION = 1  # Hours
+DEFAULT_MUTE_DURATION = 5  # Hours
 
 # Logging setup
 logging.basicConfig(
@@ -131,6 +131,30 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: di
         logger.error(f"Mute error: {e}")
         await update.effective_message.reply_text(f"⚠️ Mute failed: {e}")
 
+async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: dict):
+    try:
+        await context.bot.restrict_chat_member(
+            chat_id=update.effective_chat.id,
+            user_id=user.id,
+            permissions=ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True,
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False
+            )
+        )
+        await update.effective_message.reply_text(
+            f"🔊 {user.mention_html()} has been unmuted!",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Unmute error: {e}")
+        await update.effective_message.reply_text(f"⚠️ Unmute failed: {e}")
+
 # Welcome handler
 async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle new member events"""
@@ -185,21 +209,40 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+async def get_target_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Helper to get user from reply or user_id argument"""
+    if context.args and context.args[0].isdigit():
+        try:
+            user_id = int(context.args[0])
+            chat_member = await update.effective_chat.get_member(user_id)
+            return chat_member.user
+        except Exception as e:
+            logger.error(f"User lookup error: {e}")
+            return None
+    elif update.message.reply_to_message:
+        return update.message.reply_to_message.from_user
+    return None
+
 @admin_required
 async def handle_warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Warn user handler"""
-    if not update.message.reply_to_message:
-        await update.message.reply_text("❌ Reply to a message to warn the user!")
+    user = await get_target_user(update, context)
+    if not user:
+        await update.effective_message.reply_text("❌ Please reply to a user or provide a user_id")
         return
-
-    user = update.message.reply_to_message.from_user
-    reason = " ".join(context.args) if context.args else None
-    await warn_user(update, context, user, reason)
+    
+    # Extract reason (skip first argument if it's a user_id)
+    reason = " ".join(context.args[1:]) if context.args and context.args[0].isdigit() else " ".join(context.args)
+    await warn_user(update, context, user, reason or None)
 
 @admin_required
 async def handle_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ban user handler"""
-    user = update.effective_message.reply_to_message.from_user
+    user = await get_target_user(update, context)
+    if not user:
+        await update.effective_message.reply_text("❌ Please reply to a user or provide a user_id")
+        return
+    
     try:
         await context.bot.ban_chat_member(
             chat_id=update.effective_chat.id,
@@ -215,7 +258,11 @@ async def handle_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @admin_required
 async def handle_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Unban user handler"""
-    user = update.effective_message.reply_to_message.from_user
+    user = await get_target_user(update, context)
+    if not user:
+        await update.effective_message.reply_text("❌ Please reply to a user or provide a user_id")
+        return
+    
     try:
         await context.bot.unban_chat_member(
             chat_id=update.effective_chat.id,
@@ -227,6 +274,15 @@ async def handle_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         await update.effective_message.reply_text(f"⚠️ Unban failed: {e}")
+
+@admin_required
+async def handle_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Unmute user handler"""
+    user = await get_target_user(update, context)
+    if not user:
+        await update.effective_message.reply_text("❌ Please reply to a user or provide a user_id")
+        return
+    await unmute_user(update, context, user)
 
 # Callback handler
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -296,6 +352,7 @@ def main():
         CommandHandler("warn", handle_warn, filters=group_filter),
         CommandHandler("ban", handle_ban, filters=group_filter),
         CommandHandler("unban", handle_unban, filters=group_filter),
+        CommandHandler("unmute", handle_unmute, filters=group_filter),
         CallbackQueryHandler(handle_button),
         MessageHandler(filters.TEXT & group_filter, auto_moderation),
         ChatMemberHandler(
