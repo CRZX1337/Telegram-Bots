@@ -82,7 +82,7 @@ def save_data(filename, data):
         return False
 
 # Moderation functions
-async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: dict, reason: str = None):
+async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user, reason: str = None):
     user_id = str(user.id)
     chat_id = str(update.effective_chat.id)
     
@@ -107,7 +107,7 @@ async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: di
         user_warnings["count"] = 0
         save_data(WARN_FILE, warnings)
 
-async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: dict):
+async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user):
     try:
         settings = load_data(SETTINGS_FILE, {})
         mute_hours = settings.get("mute_duration", DEFAULT_MUTE_DURATION)
@@ -131,75 +131,55 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: di
         logger.error(f"Mute error: {e}")
         await update.effective_message.reply_text(f"⚠️ Mute failed: {e}")
 
-# Welcome handler
-async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle new member events"""
+async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user):
     try:
-        if update.chat_member.new_chat_member.status not in [
-            ChatMemberStatus.MEMBER,
-            ChatMemberStatus.ADMINISTRATOR,
-            ChatMemberStatus.OWNER
-        ]:
-            return
-
-        settings = load_data(SETTINGS_FILE, {})
-        if not settings.get("welcome_enabled", True):
-            return
-
-        user = update.chat_member.new_chat_member.user
-        welcome_msg = settings.get(
-            "welcome_message",
-            "👋 Welcome {name}! Please read the rules."
+        await context.bot.restrict_chat_member(
+            chat_id=update.effective_chat.id,
+            user_id=user.id,
+            permissions=ChatPermissions(
+                can_send_messages=True,
+                can_add_web_page_previews=True,
+                can_send_other_messages=True
+            )
         )
-        await update.effective_chat.send_message(
-            welcome_msg.format(name=user.mention_html()),
+        await update.effective_message.reply_text(
+            f"🔊 {user.mention_html()} has been unmuted!",
             parse_mode="HTML"
         )
     except Exception as e:
-        logger.error(f"Welcome error: {e}")
+        logger.error(f"Unmute error: {e}")
+        await update.effective_message.reply_text(f"⚠️ Unmute failed: {e}")
 
 # Command handlers
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command handler"""
-    if update.effective_chat.id == GROUP_ID:
-        await update.message.reply_text("🤖 Bot is ready! Use /admin")
-
-@admin_required
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin panel with inline buttons"""
-    keyboard = [
-        [
-            InlineKeyboardButton("🚫 Ban", callback_data="ban"),
-            InlineKeyboardButton("🗑️ Delete", callback_data="delete")
-        ],
-        [
-            InlineKeyboardButton("✅ Unban", callback_data="unban"),
-            InlineKeyboardButton("⚠️ Warn", callback_data="warn")
-        ],
-        [
-            InlineKeyboardButton("⚙️ Settings", callback_data="settings")
-        ]
-    ]
-    await update.message.reply_text(
-        "🔧 Admin Menu:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
 @admin_required
 async def handle_warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Warn user handler"""
-    if not update.message.reply_to_message:
-        await update.message.reply_text("❌ Reply to a message to warn the user!")
+    user = None
+    if context.args:
+        user_id = int(context.args[0])
+        user = await context.bot.get_chat(user_id)
+    elif update.message.reply_to_message:
+        user = update.message.reply_to_message.from_user
+    else:
+        await update.message.reply_text("❌ Specify a user ID or reply to a message!")
         return
 
-    user = update.message.reply_to_message.from_user
-    reason = " ".join(context.args) if context.args else None
+    reason = " ".join(context.args[1:]) if len(context.args) > 1 else None
     await warn_user(update, context, user, reason)
 
 @admin_required
 async def handle_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ban user handler"""
-    user = update.effective_message.reply_to_message.from_user
+    user = None
+    if context.args:
+        user_id = int(context.args[0])
+        user = await context.bot.get_chat(user_id)
+    elif update.message.reply_to_message:
+        user = update.message.reply_to_message.from_user
+    else:
+        await update.message.reply_text("❌ Specify a user ID or reply to a message!")
+        return
+
     try:
         await context.bot.ban_chat_member(
             chat_id=update.effective_chat.id,
@@ -215,98 +195,41 @@ async def handle_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @admin_required
 async def handle_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Unban user handler"""
-    user = update.effective_message.reply_to_message.from_user
+    user_id = int(context.args[0]) if context.args else None
+    if not user_id:
+        await update.message.reply_text("❌ Specify a user ID!")
+        return
+
     try:
         await context.bot.unban_chat_member(
             chat_id=update.effective_chat.id,
-            user_id=user.id
+            user_id=user_id
         )
-        await update.effective_message.reply_text(
-            f"✅ {user.mention_html()} has been unbanned!",
-            parse_mode="HTML"
-        )
+        await update.effective_message.reply_text(f"✅ User with ID {user_id} has been unbanned!")
     except Exception as e:
         await update.effective_message.reply_text(f"⚠️ Unban failed: {e}")
 
-# Callback handler
-async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle inline button clicks"""
-    query = update.callback_query
-    await query.answer()
-
-    if not await is_admin(update):
+@admin_required
+async def handle_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Unmute user handler"""
+    user_id = int(context.args[0]) if context.args else None
+    if not user_id:
+        await update.message.reply_text("❌ Specify a user ID!")
         return
 
-    try:
-        if query.data == "ban":
-            await query.message.reply_text("ℹ️ Reply to a message with /ban")
-        elif query.data == "delete":
-            await query.message.reply_text("ℹ️ Reply to a message with /delete")
-        elif query.data == "unban":
-            await query.message.reply_text("ℹ️ Reply to a message with /unban")
-        elif query.data == "warn":
-            await query.message.reply_text("ℹ️ Reply to a message with /warn")
-        elif query.data == "settings":
-            await settings_page(update, context)
-    except Exception as e:
-        logger.error(f"Button error: {str(e)}")
+    user = await context.bot.get_chat(user_id)
+    await unmute_user(update, context, user)
 
-async def settings_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle settings menu"""
-    await update.callback_query.message.reply_text("⚙️ Settings menu under construction!")
-
-# Auto-moderation
-async def auto_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Auto-moderate messages"""
-    if await is_admin(update):
-        return
-    
-    settings = load_data(SETTINGS_FILE, {})
-    if not settings.get("auto_moderation", False):
-        return
-    
-    text = update.message.text or update.message.caption
-    if not text:
-        return
-    
-    banned_patterns = settings.get("banned_patterns", [])
-    for pattern in banned_patterns:
-        if re.search(pattern, text, re.IGNORECASE):
-            try:
-                await update.message.delete()
-                await warn_user(
-                    update, 
-                    context,
-                    update.effective_user,
-                    reason=f"Banned pattern: {pattern}"
-                )
-            except Exception as e:
-                logger.error(f"Auto-mod failed: {e}")
-
+# Main function
 def main():
-    """Main application setup"""
     application = ApplicationBuilder().token(BOT_TOKEN).build()
-    
     group_filter = filters.Chat(chat_id=GROUP_ID)
     
-    # Handlers
-    handlers = [
-        CommandHandler("start", start, filters=group_filter),
-        CommandHandler("admin", admin_panel, filters=group_filter),
-        CommandHandler("warn", handle_warn, filters=group_filter),
-        CommandHandler("ban", handle_ban, filters=group_filter),
-        CommandHandler("unban", handle_unban, filters=group_filter),
-        CallbackQueryHandler(handle_button),
-        MessageHandler(filters.TEXT & group_filter, auto_moderation),
-        ChatMemberHandler(
-            welcome_new_member,
-            ChatMemberHandler.CHAT_MEMBER
-        )
-    ]
+    application.add_handler(CommandHandler("warn", handle_warn, filters=group_filter))
+    application.add_handler(CommandHandler("ban", handle_ban, filters=group_filter))
+    application.add_handler(CommandHandler("unban", handle_unban, filters=group_filter))
+    application.add_handler(CommandHandler("unmute", handle_unmute, filters=group_filter))
     
-    for handler in handlers:
-        application.add_handler(handler)
-
     logger.info("Bot started successfully!")
     application.run_polling()
 
