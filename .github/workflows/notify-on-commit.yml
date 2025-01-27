@@ -6,38 +6,43 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
+      # Step 1: Get all changed files across all commits in the push
       - name: Get all changed files
         id: changed-files
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # GitHub automatically provides this token
         run: |
-          # Hole alle Commits im aktuellen Push
-          COMMITS=$(jq -r '.commits[].id' <<< "${{ toJSON(github.event.commits) }}")
-          
-          # Initialisiere Zähler
+          # Safely parse the JSON data to extract commit IDs
+          COMMITS_JSON=$(printf '%s' "${{ toJSON(github.event.commits) }}")
+          COMMITS=$(echo "$COMMITS_JSON" | jq -r '.[].id')
+
+          # Initialize counters
           TOTAL_ADDED=0
           TOTAL_MODIFIED=0
           TOTAL_REMOVED=0
 
-          # Iteriere über jeden Commit und sammle Dateiänderungen
+          # Loop through each commit to aggregate file changes
           for COMMIT in $COMMITS; do
             DATA=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
               "https://api.github.com/repos/${{ github.repository }}/commits/$COMMIT")
             
-            ADDED=$(jq -r '.files[] | select(.status == "added") | .filename' <<< "$DATA" | wc -l)
-            MODIFIED=$(jq -r '.files[] | select(.status == "modified") | .filename' <<< "$DATA" | wc -l)
-            REMOVED=$(jq -r '.files[] | select(.status == "removed") | .filename' <<< "$DATA" | wc -l)
-            
+            # Count added/modified/removed files for this commit
+            ADDED=$(echo "$DATA" | jq -r '.files[] | select(.status == "added") | .filename' | wc -l)
+            MODIFIED=$(echo "$DATA" | jq -r '.files[] | select(.status == "modified") | .filename' | wc -l)
+            REMOVED=$(echo "$DATA" | jq -r '.files[] | select(.status == "removed") | .filename' | wc -l)
+
+            # Update totals
             TOTAL_ADDED=$((TOTAL_ADDED + ADDED))
             TOTAL_MODIFIED=$((TOTAL_MODIFIED + MODIFIED))
             TOTAL_REMOVED=$((TOTAL_REMOVED + REMOVED))
           done
 
-          # Speichere die Gesamtanzahlen
-          echo "::set-output name=added::$TOTAL_ADDED"
-          echo "::set-output name=modified::$TOTAL_MODIFIED"
-          echo "::set-output name=removed::$TOTAL_REMOVED"
+          # Save totals as outputs
+          echo "added=$TOTAL_ADDED" >> $GITHUB_OUTPUT
+          echo "modified=$TOTAL_MODIFIED" >> $GITHUB_OUTPUT
+          echo "removed=$TOTAL_REMOVED" >> $GITHUB_OUTPUT
 
+      # Step 2: Send the detailed message to Telegram
       - name: Send detailed message
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
