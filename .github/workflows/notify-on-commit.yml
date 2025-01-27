@@ -11,10 +11,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Use GitHub's event data directly (no hardcoded JSON)
-          COMMITS_JSON="${{ toJSON(github.event.commits) }}"
+          # Use GitHub's native event data (no hardcoding!)
+          COMMITS_JSON='${{ toJSON(github.event.commits) }}'
           
-          # Extract commit IDs safely
+          # Extract commit IDs safely using jq
           COMMITS=$(echo "$COMMITS_JSON" | jq -r '.[].id')
 
           TOTAL_ADDED=0
@@ -22,9 +22,11 @@ jobs:
           TOTAL_REMOVED=0
 
           for COMMIT in $COMMITS; do
+            # Fetch commit details via GitHub API
             DATA=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
               "https://api.github.com/repos/${{ github.repository }}/commits/$COMMIT")
             
+            # Count files using jq (robust method)
             ADDED=$(echo "$DATA" | jq -r '[.files[] | select(.status == "added")] | length')
             MODIFIED=$(echo "$DATA" | jq -r '[.files[] | select(.status == "modified")] | length')
             REMOVED=$(echo "$DATA" | jq -r '[.files[] | select(.status == "removed")] | length')
@@ -34,6 +36,7 @@ jobs:
             TOTAL_REMOVED=$((TOTAL_REMOVED + REMOVED))
           done
 
+          # Save outputs
           echo "added=$TOTAL_ADDED" >> $GITHUB_OUTPUT
           echo "modified=$TOTAL_MODIFIED" >> $GITHUB_OUTPUT
           echo "removed=$TOTAL_REMOVED" >> $GITHUB_OUTPUT
