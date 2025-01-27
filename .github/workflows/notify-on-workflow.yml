@@ -17,7 +17,7 @@ jobs:
           DURATION=$(($(date -d "$END" +%s) - $(date -d "$START" +%s)))
           echo "::set-output name=duration::$(date -u -d @$DURATION +'%Hh %Mm %Ss')"
 
-      - name: Send workflow details
+      - name: Send workflow details !
         run: |
           if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
             EMOJI="✅"

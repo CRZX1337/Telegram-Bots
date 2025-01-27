@@ -25,7 +25,7 @@ from telegram.constants import ChatMemberStatus
 
 # Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_ID = -1002270622838  # Replace with your actual chat group ID
+GROUP_ID = -1002270622838  # Replace with your actual chat group IDs!
 ADMIN_IDS = {5685799208, 136817688, 1087968824}
 SETTINGS_FILE = "group_settings.json"
 WARN_FILE = "warnings.json"

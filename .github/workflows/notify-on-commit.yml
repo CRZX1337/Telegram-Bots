@@ -6,7 +6,7 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Get all changed files
+      - name: Get all changed files! 
         id: changed-files
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
