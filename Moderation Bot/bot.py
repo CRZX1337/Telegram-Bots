@@ -118,8 +118,13 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: di
             user_id=user.id,
             permissions=ChatPermissions(
                 can_send_messages=False,
+                can_send_media_messages=False,
+                can_send_polls=False,
+                can_send_other_messages=False,
                 can_add_web_page_previews=False,
-                can_send_other_messages=False
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False
             ),
             until_date=until_date
         )
@@ -142,9 +147,9 @@ async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: 
                 can_send_polls=True,
                 can_send_other_messages=True,
                 can_add_web_page_previews=True,
-                can_change_info=False,
-                can_invite_users=False,
-                can_pin_messages=False
+                can_change_info=True,
+                can_invite_users=True,
+                can_pin_messages=True
             )
         )
         await update.effective_message.reply_text(
