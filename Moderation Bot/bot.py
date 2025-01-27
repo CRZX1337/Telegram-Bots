@@ -116,16 +116,7 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: di
         await context.bot.restrict_chat_member(
             chat_id=update.effective_chat.id,
             user_id=user.id,
-            permissions=ChatPermissions(
-                can_send_messages=False,
-                can_send_media_messages=False,
-                can_send_polls=False,
-                can_send_other_messages=False,
-                can_add_web_page_previews=False,
-                can_change_info=False,
-                can_invite_users=False,
-                can_pin_messages=False
-            ),
+            permissions=ChatPermissions.no_permissions(),
             until_date=until_date
         )
         await update.effective_message.reply_text(
@@ -141,16 +132,7 @@ async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: 
         await context.bot.restrict_chat_member(
             chat_id=update.effective_chat.id,
             user_id=user.id,
-            permissions=ChatPermissions(
-                can_send_messages=True,
-                can_send_media_messages=True,
-                can_send_polls=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True,
-                can_change_info=True,
-                can_invite_users=True,
-                can_pin_messages=True
-            )
+            permissions=ChatPermissions.all_permissions()
         )
         await update.effective_message.reply_text(
             f"🔊 {user.mention_html()} has been unmuted!",
