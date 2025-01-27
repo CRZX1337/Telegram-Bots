@@ -25,11 +25,11 @@ from telegram.constants import ChatMemberStatus
 
 # Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_ID = -1002270622838  # Replace with your actual group ID!
+GROUP_ID = -1002270622838  # Replace with your actual chat group ID
 ADMIN_IDS = {5685799208, 136817688, 1087968824}
 SETTINGS_FILE = "group_settings.json"
 WARN_FILE = "warnings.json"
-DEFAULT_MUTE_DURATION = 3  # Hours!
+DEFAULT_MUTE_DURATION = 3  # Hour
 
 # Logging setup!
 logging.basicConfig(
