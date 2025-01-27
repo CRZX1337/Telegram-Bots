@@ -1,0 +1,19 @@
+name: Notify Telegram on Push
+
+on: [push] # Triggers on any push to the repository
+
+jobs:
+  send-telegram-notification:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send commit alert to Telegram
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+          -d "parse_mode=Markdown" \
+          -d "text=📥 *New Commit Pushed to $GITHUB_REPOSITORY*
+
+          *Branch*: \`${{ github.ref }}\`
+          *Author*: ${{ github.actor }}
+          *Message*: \`${{ github.event.head_commit.message }}\`
+          [View Changes](${{ github.event.head_commit.url }})"
