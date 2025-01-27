@@ -1,19 +1,42 @@
-name: Notify Telegram on Push
+name: Enhanced Commit Notification
 
-on: [push] # Triggers on any push to the repository
+on: [push]
 
 jobs:
-  send-telegram-notification:
+  notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Send commit alert to Telegram
+      - name: Fetch commit details
+        id: commit-details
+        run: |
+          # Extrahiere Dateiänderungen aus dem GitHub-Event
+          ADDED=$(echo '${{ toJSON(github.event.commits[0].added) }}' | jq length)
+          MODIFIED=$(echo '${{ toJSON(github.event.commits[0].modified) }}' | jq length)
+          REMOVED=$(echo '${{ toJSON(github.event.commits[0].removed) }}' | jq length)
+          
+          # Speichere die Daten für die Nachricht
+          echo "::set-output name=added::$ADDED"
+          echo "::set-output name=modified::$MODIFIED"
+          echo "::set-output name=removed::$REMOVED"
+
+      - name: Send detailed message
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d "parse_mode=Markdown" \
-          -d "text=📥 *New Commit Pushed to $GITHUB_REPOSITORY*
+          -d "parse_mode=MarkdownV2" \
+          -d "text=📌 **New Commit to \`${{ github.repository }}\`** 
 
-          *Branch*: \`${{ github.ref }}\`
-          *Author*: ${{ github.actor }}
-          *Message*: \`${{ github.event.head_commit.message }}\`
-          [View Changes](${{ github.event.head_commit.url }})"
+          🔹 **Branch**: \`${{ github.ref }}\`  
+          👤 **Author**: ${{ github.actor }}  
+          🕒 **Timestamp**: \`${{ github.event.head_commit.timestamp }}\`  
+          📝 **Message**:  
+          \`\`\`  
+          ${{ github.event.head_commit.message }}  
+          \`\`\`  
+
+          📂 **Files Changed**:  
+          ➕ Added: ${{ steps.commit-details.outputs.added }}  
+          ✏️ Modified: ${{ steps.commit-details.outputs.modified }}  
+          🗑️ Removed: ${{ steps.commit-details.outputs.removed }}  
+
+          🔗 [Compare Changes](${{ github.event.compare }})"
