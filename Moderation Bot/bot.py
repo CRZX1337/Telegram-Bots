@@ -9,7 +9,8 @@ from telegram import (
     ChatPermissions,
     InlineKeyboardButton, 
     InlineKeyboardMarkup,
-    ChatMember
+    ChatMember,
+    User
 )
 from telegram.ext import (
     ApplicationBuilder,
@@ -51,6 +52,16 @@ async def is_admin(update: Update) -> bool:
         logger.error(f"Admin check failed: {e}")
         return False
 
+async def is_bot_admin(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
+    """Check if bot has admin privileges"""
+    try:
+        bot = await context.bot.get_me()
+        bot_member = await context.bot.get_chat_member(chat_id, bot.id)
+        return bot_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
+    except Exception as e:
+        logger.error(f"Bot admin check failed: {e}")
+        return False
+
 def admin_required(func):
     """Decorator to restrict commands to admins"""
     @wraps(func)
@@ -82,7 +93,7 @@ def save_data(filename, data):
         return False
 
 # Moderation functions
-async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: dict, reason: str = None):
+async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: User, reason: str = None):
     user_id = str(user.id)
     chat_id = str(update.effective_chat.id)
     
@@ -107,11 +118,17 @@ async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: di
         user_warnings["count"] = 0
         save_data(WARN_FILE, warnings)
 
-async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: dict):
+async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: User):
     try:
+        if not await is_bot_admin(context, update.effective_chat.id):
+            await update.effective_message.reply_text("❌ Bot needs admin privileges to mute users")
+            return
+
         settings = load_data(SETTINGS_FILE, {})
         mute_hours = settings.get("mute_duration", DEFAULT_MUTE_DURATION)
         until_date = datetime.now(timezone.utc) + timedelta(hours=mute_hours)
+        
+        logger.info(f"Attempting to mute {user.id} until {until_date}")
         
         await context.bot.restrict_chat_member(
             chat_id=update.effective_chat.id,
@@ -125,10 +142,14 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: di
         )
     except Exception as e:
         logger.error(f"Mute error: {e}")
-        await update.effective_message.reply_text(f"⚠️ Mute failed: {e}")
+        await update.effective_message.reply_text(f"⚠️ Mute failed: {str(e)}")
 
-async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: dict):
+async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: User):
     try:
+        if not await is_bot_admin(context, update.effective_chat.id):
+            await update.effective_message.reply_text("❌ Bot needs admin privileges to unmute users")
+            return
+
         await context.bot.restrict_chat_member(
             chat_id=update.effective_chat.id,
             user_id=user.id,
@@ -140,7 +161,7 @@ async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user: 
         )
     except Exception as e:
         logger.error(f"Unmute error: {e}")
-        await update.effective_message.reply_text(f"⚠️ Unmute failed: {e}")
+        await update.effective_message.reply_text(f"⚠️ Unmute failed: {str(e)}")
 
 # Welcome handler
 async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -196,19 +217,23 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-async def get_target_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_target_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> User | None:
     """Helper to get user from reply or user_id argument"""
-    if context.args and context.args[0].isdigit():
-        try:
+    try:
+        if context.args and context.args[0].isdigit():
             user_id = int(context.args[0])
+            if user_id <= 0:
+                await update.effective_message.reply_text("❌ Invalid user ID")
+                return None
             chat_member = await update.effective_chat.get_member(user_id)
             return chat_member.user
-        except Exception as e:
-            logger.error(f"User lookup error: {e}")
-            return None
-    elif update.message.reply_to_message:
-        return update.message.reply_to_message.from_user
-    return None
+        elif update.message.reply_to_message:
+            return update.message.reply_to_message.from_user
+        return None
+    except Exception as e:
+        logger.error(f"User lookup error: {e}")
+        await update.effective_message.reply_text("❌ Could not find user")
+        return None
 
 @admin_required
 async def handle_warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -240,7 +265,7 @@ async def handle_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
     except Exception as e:
-        await update.effective_message.reply_text(f"⚠️ Ban failed: {e}")
+        await update.effective_message.reply_text(f"⚠️ Ban failed: {str(e)}")
 
 @admin_required
 async def handle_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -260,7 +285,7 @@ async def handle_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
     except Exception as e:
-        await update.effective_message.reply_text(f"⚠️ Unban failed: {e}")
+        await update.effective_message.reply_text(f"⚠️ Unban failed: {str(e)}")
 
 @admin_required
 async def handle_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
