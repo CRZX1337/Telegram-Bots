@@ -6,18 +6,37 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch commit details
-        id: commit-details
+      - name: Get all changed files
+        id: changed-files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Extrahiere Dateiänderungen aus dem GitHub-Event
-          ADDED=$(echo '${{ toJSON(github.event.commits[0].added) }}' | jq length)
-          MODIFIED=$(echo '${{ toJSON(github.event.commits[0].modified) }}' | jq length)
-          REMOVED=$(echo '${{ toJSON(github.event.commits[0].removed) }}' | jq length)
+          # Hole alle Commits im aktuellen Push
+          COMMITS=$(jq -r '.commits[].id' <<< "${{ toJSON(github.event.commits) }}")
           
-          # Speichere die Daten für die Nachricht
-          echo "::set-output name=added::$ADDED"
-          echo "::set-output name=modified::$MODIFIED"
-          echo "::set-output name=removed::$REMOVED"
+          # Initialisiere Zähler
+          TOTAL_ADDED=0
+          TOTAL_MODIFIED=0
+          TOTAL_REMOVED=0
+
+          # Iteriere über jeden Commit und sammle Dateiänderungen
+          for COMMIT in $COMMITS; do
+            DATA=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/commits/$COMMIT")
+            
+            ADDED=$(jq -r '.files[] | select(.status == "added") | .filename' <<< "$DATA" | wc -l)
+            MODIFIED=$(jq -r '.files[] | select(.status == "modified") | .filename' <<< "$DATA" | wc -l)
+            REMOVED=$(jq -r '.files[] | select(.status == "removed") | .filename' <<< "$DATA" | wc -l)
+            
+            TOTAL_ADDED=$((TOTAL_ADDED + ADDED))
+            TOTAL_MODIFIED=$((TOTAL_MODIFIED + MODIFIED))
+            TOTAL_REMOVED=$((TOTAL_REMOVED + REMOVED))
+          done
+
+          # Speichere die Gesamtanzahlen
+          echo "::set-output name=added::$TOTAL_ADDED"
+          echo "::set-output name=modified::$TOTAL_MODIFIED"
+          echo "::set-output name=removed::$TOTAL_REMOVED"
 
       - name: Send detailed message
         run: |
@@ -26,17 +45,9 @@ jobs:
           -d "parse_mode=MarkdownV2" \
           -d "text=📌 **New Commit to \`${{ github.repository }}\`** 
 
-          🔹 **Branch**: \`${{ github.ref }}\`  
-          👤 **Author**: ${{ github.actor }}  
-          🕒 **Timestamp**: \`${{ github.event.head_commit.timestamp }}\`  
-          📝 **Message**:  
-          \`\`\`  
-          ${{ github.event.head_commit.message }}  
-          \`\`\`  
-
           📂 **Files Changed**:  
-          ➕ Added: ${{ steps.commit-details.outputs.added }}  
-          ✏️ Modified: ${{ steps.commit-details.outputs.modified }}  
-          🗑️ Removed: ${{ steps.commit-details.outputs.removed }}  
+          ➕ Added: ${{ steps.changed-files.outputs.added }}  
+          ✏️ Modified: ${{ steps.changed-files.outputs.modified }}  
+          🗑️ Removed: ${{ steps.changed-files.outputs.removed }}  
 
           🔗 [Compare Changes](${{ github.event.compare }})"
